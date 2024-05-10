@@ -117,11 +117,94 @@ impl Set {
             _ => Empty,
         }
     }
+
+    /// Check if intervals have intersection
+    ///
+    /// Note that ``Empty` intersect nothing.
+    ///
+    pub fn intersect(self, other: Set) -> Set {
+        match (self, other) {
+            (Set::Empty, _) | (_, Set::Empty) => Set::Empty,
+            (Interval(NegInfy, PosInfy), i) => i,
+            (i, Interval(NegInfy, PosInfy)) => i,
+            (Interval(a1, a2), Interval(b1, b2)) => {
+                if (a1 > b1 && a1 < b2)
+                    || (a2 > b1 && a2 < b2)
+                    || (b1 > a1 && b1 < a2)
+                    || (b2 > a1 && b2 < a2)
+                {
+                    Interval(a1.min(b1), a2.max(b2))
+                } else {
+                    Empty
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_intersect_1() {
+        let a1 = Set::new(Bound::Unbound, Bound::Unbound);
+        let b1 = Set::new(Bound::Unbound, Bound::Unbound);
+
+        assert!(matches!(a1.intersect(b1), Interval(NegInfy, PosInfy)));
+    }
+
+    #[test]
+    fn test_intersect_2() {
+        let a1 = Set::new(Bound::Unbound, Bound::Unbound);
+        let b1 = Set::Empty;
+
+        assert!(matches!(a1.intersect(b1), Empty));
+    }
+
+    #[test]
+    fn test_intersect_3() {
+        let a1 = Set::Empty;
+        let b1 = Set::new(Bound::Unbound, Bound::Unbound);
+
+        assert!(matches!(a1.intersect(b1), Empty));
+    }
+
+    #[test]
+    fn test_intersect_4() {
+        let a1 = Set::new(Bound::Closed(42.), Bound::Open(43.));
+        let b1 = Set::new(Bound::Unbound, Bound::Unbound);
+        assert!(match a1.intersect(b1) {
+            Interval(Closed(k1), RightOpen(k2)) => k1 == 42. && k2 == 43.,
+            _ => false,
+        });
+    }
+
+    #[test]
+    fn test_intersect_5() {
+        let a1 = Set::new(Bound::Unbound, Bound::Unbound);
+        let b1 = Set::new(Bound::Closed(42.), Bound::Open(43.));
+        assert!(match a1.intersect(b1) {
+            Interval(Closed(k1), RightOpen(k2)) => k1 == 42. && k2 == 43.,
+            _ => false,
+        });
+    }
+
+    #[test]
+    fn test_intersect_6() {
+        let a1 = Set::Empty;
+        let b1 = Set::new(Bound::Unbound, Bound::Unbound);
+
+        assert!(matches!(a1.intersect(b1), Empty));
+    }
+
+    #[test]
+    fn test_intersect_7() {
+        let a1 = Set::Empty;
+        let b1 = Set::Empty;
+
+        assert!(matches!(a1.intersect(b1), Empty));
+    }
 
     #[test]
     fn test_union_1() {
