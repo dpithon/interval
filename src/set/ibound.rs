@@ -78,19 +78,19 @@ impl PartialOrd for IBound {
 }
 
 impl IBound {
-    pub fn min(&self, b2: &IBound) -> IBound {
+    pub fn min(self, b2: IBound) -> IBound {
         if self < b2 {
-            *self
+            self
         } else {
-            *b2
+            b2
         }
     }
 
-    pub fn max(&self, b2: &IBound) -> IBound {
+    pub fn max(self, b2: IBound) -> IBound {
         if self > b2 {
-            *self
+            self
         } else {
-            *b2
+            b2
         }
     }
 
