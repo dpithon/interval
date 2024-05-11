@@ -114,30 +114,27 @@ impl Set {
             (Interval(NegInfy, PosInfy), _) | (_, Interval(NegInfy, PosInfy)) => {
                 Interval(NegInfy, PosInfy)
             }
-            _ => Empty,
+            (Interval(a1, a2), Interval(b1, b2))
+                if Interval(a1, a2).overlap(Interval(b1, b2))
+                    || a2.closure() == b1.closure()
+                    || a1.closure() == b2.closure() =>
+            {
+                Interval(a1.min(b1), a2.max(b2))
+            }
+            (Interval(a1, a2), Interval(b1, b2)) => Set::Empty,
         }
     }
 
-    /// Check if intervals have intersection
+    /// Check if intervals overlap
     ///
-    /// Note that ``Empty` intersect nothing.
+    /// Note that ``Empty` overlap nothing.
     ///
-    pub fn intersect(self, other: Set) -> Set {
+    pub fn overlap(self, other: Set) -> bool {
         match (self, other) {
-            (Set::Empty, _) | (_, Set::Empty) => Set::Empty,
-            (Interval(NegInfy, PosInfy), i) => i,
-            (i, Interval(NegInfy, PosInfy)) => i,
-            (Interval(a1, a2), Interval(b1, b2)) => {
-                if (a1 > b1 && a1 < b2)
-                    || (a2 > b1 && a2 < b2)
-                    || (b1 > a1 && b1 < a2)
-                    || (b2 > a1 && b2 < a2)
-                {
-                    Interval(a1.min(b1), a2.max(b2))
-                } else {
-                    Empty
-                }
-            }
+            (Set::Empty, _) | (_, Set::Empty) => false,
+            (Interval(NegInfy, PosInfy), _) => true,
+            (_, Interval(NegInfy, PosInfy)) => true,
+            (Interval(a1, a2), Interval(b1, b2)) => b2 >= a1 && b1 <= a2,
         }
     }
 }
@@ -147,63 +144,189 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_intersect_1() {
-        let a1 = Set::new(Bound::Unbound, Bound::Unbound);
-        let b1 = Set::new(Bound::Unbound, Bound::Unbound);
+    fn test_overlap_1() {
+        let a = Set::new(Bound::Unbound, Bound::Unbound);
+        let b = Set::new(Bound::Unbound, Bound::Unbound);
 
-        assert!(matches!(a1.intersect(b1), Interval(NegInfy, PosInfy)));
+        assert!(a.overlap(b));
     }
 
     #[test]
-    fn test_intersect_2() {
-        let a1 = Set::new(Bound::Unbound, Bound::Unbound);
-        let b1 = Set::Empty;
+    fn test_overlap_2() {
+        let a = Set::new(Bound::Unbound, Bound::Unbound);
+        let b = Set::Empty;
 
-        assert!(matches!(a1.intersect(b1), Empty));
+        assert!(!a.overlap(b));
     }
 
     #[test]
-    fn test_intersect_3() {
-        let a1 = Set::Empty;
-        let b1 = Set::new(Bound::Unbound, Bound::Unbound);
+    fn test_overlap_3() {
+        let a = Set::Empty;
+        let b = Set::new(Bound::Unbound, Bound::Unbound);
 
-        assert!(matches!(a1.intersect(b1), Empty));
+        assert!(!a.overlap(b));
     }
 
     #[test]
-    fn test_intersect_4() {
-        let a1 = Set::new(Bound::Closed(42.), Bound::Open(43.));
-        let b1 = Set::new(Bound::Unbound, Bound::Unbound);
-        assert!(match a1.intersect(b1) {
-            Interval(Closed(k1), RightOpen(k2)) => k1 == 42. && k2 == 43.,
-            _ => false,
-        });
+    fn test_overlap_4() {
+        let a = Set::new(Bound::Closed(42.), Bound::Closed(43.));
+        let b = Set::new(Bound::Unbound, Bound::Unbound);
+        assert!(a.overlap(b));
     }
 
     #[test]
-    fn test_intersect_5() {
-        let a1 = Set::new(Bound::Unbound, Bound::Unbound);
-        let b1 = Set::new(Bound::Closed(42.), Bound::Open(43.));
-        assert!(match a1.intersect(b1) {
-            Interval(Closed(k1), RightOpen(k2)) => k1 == 42. && k2 == 43.,
-            _ => false,
-        });
+    fn test_overlap_5() {
+        let a = Set::new(Bound::Unbound, Bound::Unbound);
+        let b = Set::new(Bound::Closed(42.), Bound::Closed(43.));
+        assert!(a.overlap(b));
     }
 
     #[test]
-    fn test_intersect_6() {
-        let a1 = Set::Empty;
-        let b1 = Set::new(Bound::Unbound, Bound::Unbound);
-
-        assert!(matches!(a1.intersect(b1), Empty));
+    fn test_overlap_6() {
+        let a = Set::new(Bound::Closed(42.), Bound::Open(43.));
+        let b = Set::new(Bound::Unbound, Bound::Unbound);
+        assert!(a.overlap(b));
     }
 
     #[test]
-    fn test_intersect_7() {
-        let a1 = Set::Empty;
-        let b1 = Set::Empty;
+    fn test_overlap_7() {
+        let a = Set::new(Bound::Unbound, Bound::Unbound);
+        let b = Set::new(Bound::Closed(42.), Bound::Open(43.));
+        assert!(a.overlap(b));
+    }
 
-        assert!(matches!(a1.intersect(b1), Empty));
+    #[test]
+    fn test_overlap_8() {
+        let a = Set::new(Bound::Open(42.), Bound::Open(43.));
+        let b = Set::new(Bound::Unbound, Bound::Unbound);
+        assert!(a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_9() {
+        let a = Set::new(Bound::Unbound, Bound::Unbound);
+        let b = Set::new(Bound::Open(42.), Bound::Open(43.));
+        assert!(a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_10() {
+        let a = Set::new(Bound::Unbound, Bound::Open(43.));
+        let b = Set::new(Bound::Unbound, Bound::Unbound);
+        assert!(a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_11() {
+        let a = Set::new(Bound::Unbound, Bound::Unbound);
+        let b = Set::new(Bound::Open(42.), Bound::Unbound);
+        assert!(a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_12() {
+        let a = Set::Empty;
+        let b = Set::new(Bound::Unbound, Bound::Unbound);
+
+        assert!(!a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_13() {
+        let a = Set::Empty;
+        let b = Set::Empty;
+
+        assert!(!a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_14() {
+        let a = Set::new(Bound::Closed(42.), Bound::Closed(52.));
+        let b = Set::new(Bound::Closed(42.), Bound::Closed(52.));
+        assert!(a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_15() {
+        let a = Set::new(Bound::Closed(42.), Bound::Closed(52.));
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+
+        assert!(a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_16() {
+        let a = Set::new(Bound::Closed(42.), Bound::Closed(52.));
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+
+        assert!(b.overlap(a));
+    }
+
+    #[test]
+    fn test_overlap_17() {
+        let a = Set::new(Bound::Open(42.), Bound::Closed(52.));
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+
+        assert!(a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_18() {
+        let a = Set::new(Bound::Open(42.), Bound::Closed(52.));
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+
+        assert!(b.overlap(a));
+    }
+
+    #[test]
+    fn test_overlap_19() {
+        let a = Set::new(Bound::Closed(42.), Bound::Open(52.));
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+
+        assert!(a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_20() {
+        let a = Set::new(Bound::Closed(42.), Bound::Open(52.));
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+
+        assert!(b.overlap(a));
+    }
+
+    #[test]
+    fn test_overlap_21() {
+        let a = Set::new(Bound::Open(42.), Bound::Open(52.));
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+        assert!(a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_22() {
+        let a = Set::new(Bound::Unbound, Bound::Closed(42.));
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+        assert!(!a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_23() {
+        let a = Set::new(Bound::Unbound, Bound::Open(42.));
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+        assert!(!a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_24() {
+        let a = Set::new(Bound::Closed(52.), Bound::Unbound);
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+        assert!(!a.overlap(b));
+    }
+
+    #[test]
+    fn test_overlap_25() {
+        let a = Set::new(Bound::Open(52.), Bound::Unbound);
+        let b = Set::new(Bound::Open(42.), Bound::Open(52.));
+        assert!(!a.overlap(b));
     }
 
     #[test]

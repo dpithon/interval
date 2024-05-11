@@ -63,7 +63,7 @@ impl PartialOrd for IBound {
     }
 
     fn ge(&self, other: &Self) -> bool {
-        self < other || self == other
+        self > other || self == other
     }
 
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -95,13 +95,14 @@ impl IBound {
     }
 
     pub fn connected(self, other: IBound) -> bool {
-        match (self, other) {
-            (Closed(k1), Closed(k2)) => k1 == k2,
-            (Closed(k1), LeftOpen(k2)) => k1 == k2,
-            (LeftOpen(k1), Closed(k2)) => k1 == k2,
-            (RightOpen(k1), Closed(k2)) => k1 == k2,
-            (Closed(k1), RightOpen(k2)) => k1 == k2,
-            _ => false,
+        self.closure() == other.closure()
+    }
+
+    pub fn closure(self) -> Self {
+        match self {
+            NegInfy => NegInfy,
+            PosInfy => PosInfy,
+            Closed(k) | LeftOpen(k) | RightOpen(k) => Closed(k),
         }
     }
 }
@@ -509,7 +510,7 @@ mod test {
 
     #[test]
     fn test_connected_1() {
-        let bounds1 = [Closed(42.), LeftOpen(42.), RightOpen(42.), PosInfy, NegInfy];
+        let bounds1 = [Closed(42.), LeftOpen(42.), RightOpen(42.)];
         let bounds2 = [Closed(43.), NegInfy, PosInfy, LeftOpen(43.), RightOpen(43.)];
 
         for bound1 in bounds1 {
