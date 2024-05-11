@@ -1,5 +1,11 @@
 use std::cmp::{Ordering, PartialEq, PartialOrd};
 
+pub enum Bound {
+    Open(f64),
+    Closed(f64),
+    Unbound,
+}
+
 /// IBounds of an interval
 #[derive(Debug, Clone, Copy)]
 pub enum IBound {
@@ -92,10 +98,6 @@ impl IBound {
         } else {
             b2
         }
-    }
-
-    pub fn connected(self, other: IBound) -> bool {
-        self.closure() == other.closure()
     }
 
     pub fn closure(self) -> Self {
@@ -506,37 +508,5 @@ mod test {
         let b2 = NegInfy;
 
         assert!(dbg!(!b1.gt(&b2)));
-    }
-
-    #[test]
-    fn test_connected_1() {
-        let bounds1 = [Closed(42.), LeftOpen(42.), RightOpen(42.)];
-        let bounds2 = [Closed(43.), NegInfy, PosInfy, LeftOpen(43.), RightOpen(43.)];
-
-        for bound1 in bounds1 {
-            for bound2 in bounds2 {
-                assert!(!bound1.connected(bound2));
-            }
-        }
-    }
-
-    #[test]
-    fn test_connected_2() {
-        let b1 = Closed(42.);
-        let bounds = [Closed(42.), LeftOpen(42.), RightOpen(42.)];
-
-        for bound in bounds {
-            assert!(b1.connected(bound));
-        }
-    }
-
-    #[test]
-    fn test_connected_3() {
-        let b1 = Closed(42.);
-        let bounds = [Closed(42.), LeftOpen(42.), RightOpen(42.)];
-
-        for bound in bounds {
-            assert!(bound.connected(b1));
-        }
     }
 }

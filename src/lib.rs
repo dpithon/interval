@@ -1,4 +1,4 @@
-mod set;
+mod interval;
 
-pub use set::Bound::{Closed, Open, Unbound};
-pub use set::{Set, EMPTY, INFINITY};
+pub use interval::Bound::{Closed, Open, Unbound};
+pub use interval::{Interval, EMPTY, INFINITY};
