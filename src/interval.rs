@@ -14,6 +14,15 @@ pub enum Union {
     Couple(Interval, Interval),
 }
 
+impl Display for Union {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Union::Single(i) => write!(f, "{i}"),
+            Union::Couple(a, b) => write!(f, "{a} U {b}"),
+        }
+    }
+}
+
 pub const INFINITY: Interval = Interval(NegInfy, PosInfy);
 pub const EMPTY: Interval = Interval(LeftOpen(0.), RightOpen(0.));
 
