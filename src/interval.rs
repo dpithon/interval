@@ -9,6 +9,9 @@ use std::fmt::Display;
 #[derive(Debug, Clone, Copy)]
 pub struct Interval(IBound, IBound);
 
+// FIXME: Empty **Should** be a Variant, it has no endpoints
+// FIXME: Same for infinity set and singleton ?
+
 pub enum Union {
     Single(Interval),
     Couple(Interval, Interval),
@@ -63,7 +66,7 @@ impl Interval {
     /// # Example
     ///
     /// ```
-    /// use set::{Interval, Open, Closed, Unbound};
+    /// use interval::{Interval, Open, Closed, Unbound};
     ///
     /// let a = Interval::new(Open(42.), Closed(43.));
     /// let b = Interval::new(Unbound, Unbound);
@@ -113,39 +116,59 @@ impl Interval {
 
     pub fn union(self, other: Interval) -> Union {
         match (self, other) {
+            // Empty set ?
             (a, Interval(LeftOpen(k1), RightOpen(k2))) if k1 == k2 => Union::Single(a),
             (Interval(LeftOpen(k1), RightOpen(k2)), b) if k1 == k2 => Union::Single(b),
+
+            // Infinity set ?
             (Interval(NegInfy, PosInfy), _) | (_, Interval(NegInfy, PosInfy)) => {
                 Union::Single(Interval(NegInfy, PosInfy))
             }
-            (Interval(a1, a2), Interval(b1, b2))
-                if Interval(a1, a2).overlap(Interval(b1, b2))
-                    || a2.closure() == b1.closure()
-                    || a1.closure() == b2.closure() =>
-            {
-                Union::Single(Interval(a1.min(b1), a2.max(b2)))
-            }
-            (Interval(a1, a2), Interval(b1, b2)) => {
-                if b1 > a2 {
-                    Union::Couple(Interval(a1, a2), Interval(b1, b2))
+
+            (a, b) => {
+                if a.overlap(b) || a.adhere_to(b) {
+                    Union::Single(Self::force_merge(a, b))
+                } else if b.0 > a.1 {
+                    Union::Couple(a, b)
                 } else {
-                    Union::Couple(Interval(b1, b2), Interval(a1, a2))
+                    Union::Couple(b, a)
                 }
             }
         }
+    }
+
+    fn force_merge(a: Interval, b: Interval) -> Interval {
+        Interval(a.0.min(b.0), a.1.max(b.1))
     }
 
     /// Check if intervals overlap
     ///
     /// Note that `Empty` overlap nothing.
     ///
-    pub fn overlap(self, other: Interval) -> bool {
+    fn overlap(self, other: Interval) -> bool {
         match (self, other) {
+            // empty set ?
             (_, Interval(LeftOpen(k1), RightOpen(k2))) if k1 == k2 => false,
             (Interval(LeftOpen(k1), RightOpen(k2)), _) if k1 == k2 => false,
+
+            // Infinity set ?
             (Interval(NegInfy, PosInfy), _) => true,
             (_, Interval(NegInfy, PosInfy)) => true,
+
             (Interval(a1, a2), Interval(b1, b2)) => b2 >= a1 && b1 <= a2,
+        }
+    }
+
+    /// Check if interval endpoints could rejoin (ie ]2 and (2, (2 and 2] ...)
+    ///
+    /// Note that `Empty` adhere to nothing.
+    /// FIXME: Empty set representation does not make it implicit...
+    ///
+    fn adhere_to(self, other: Interval) -> bool {
+        if self.is_empty() || other.is_empty() {
+            false
+        } else {
+            self.1.closure() == other.0.closure() || other.1.closure() == self.0.closure()
         }
     }
 }
