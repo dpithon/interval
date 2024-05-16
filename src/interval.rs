@@ -7,10 +7,13 @@ use std::cmp::PartialEq;
 use std::fmt::Display;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Interval(IBound, IBound);
+pub enum Interval {
+    Empty,
+    Infinity,
+    Ival(IBound, IBound),
+}
 
-// FIXME: Empty **Should** be a Variant, it has no endpoints
-// FIXME: Same for infinity set and singleton ?
+use Interval::*;
 
 pub enum Union {
     Single(Interval),
@@ -26,23 +29,23 @@ impl Display for Union {
     }
 }
 
-pub const INFINITY: Interval = Interval(NegInfy, PosInfy);
-pub const EMPTY: Interval = Interval(LeftOpen(0.), RightOpen(0.));
+pub const INFINITY: Interval = Interval::Infinity;
+pub const EMPTY: Interval = Interval::Empty;
 
 impl Display for Interval {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Interval(LeftOpen(k1), RightOpen(k2)) if k1 == k2 => write!(f, "∅"),
-            Interval(Closed(k1), Closed(k2)) if k1 == k2 => write!(f, "{{{k1:5.2}}}"),
-            Interval(Closed(k1), Closed(k2)) => write!(f, "[{k1:5.2},{k2:5.2}]"),
-            Interval(Closed(k1), RightOpen(k2)) => write!(f, "[{k1:5.2},{k2:5.2}["),
-            Interval(Closed(k1), PosInfy) => write!(f, "[{k1:5.2},+∞["),
-            Interval(LeftOpen(k1), Closed(k2)) => write!(f, "]{k1:5.2},{k2:5.2}]"),
-            Interval(LeftOpen(k1), RightOpen(k2)) => write!(f, "]{k1:5.2},{k2:5.2}["),
-            Interval(LeftOpen(k1), PosInfy) => write!(f, "]{k1:5.2},+∞["),
-            Interval(NegInfy, Closed(k2)) => write!(f, "]-∞,{k2:5.2}]"),
-            Interval(NegInfy, RightOpen(k2)) => write!(f, "]-∞,{k2:5.2}["),
-            Interval(NegInfy, PosInfy) => write!(f, "]-∞,+∞["),
+            Empty => write!(f, "∅"),
+            Infinity => write!(f, "]-∞,+∞["),
+            Ival(Closed(k1), Closed(k2)) if k1 == k2 => write!(f, "{{{k1:5.2}}}"),
+            Ival(Closed(k1), Closed(k2)) => write!(f, "[{k1:5.2},{k2:5.2}]"),
+            Ival(Closed(k1), RightOpen(k2)) => write!(f, "[{k1:5.2},{k2:5.2}["),
+            Ival(Closed(k1), PosInfy) => write!(f, "[{k1:5.2},+∞["),
+            Ival(LeftOpen(k1), Closed(k2)) => write!(f, "]{k1:5.2},{k2:5.2}]"),
+            Ival(LeftOpen(k1), RightOpen(k2)) => write!(f, "]{k1:5.2},{k2:5.2}["),
+            Ival(LeftOpen(k1), PosInfy) => write!(f, "]{k1:5.2},+∞["),
+            Ival(NegInfy, Closed(k2)) => write!(f, "]-∞,{k2:5.2}]"),
+            Ival(NegInfy, RightOpen(k2)) => write!(f, "]-∞,{k2:5.2}["),
             _ => panic!("Malformed interval {:?}", self),
         }
     }
@@ -50,10 +53,12 @@ impl Display for Interval {
 
 impl PartialEq for Interval {
     fn eq(&self, other: &Self) -> bool {
-        let Interval(a1, a2) = self;
-        let Interval(b1, b2) = other;
-
-        a1 == b1 && a2 == b2
+        match (self, other) {
+            (Empty, Empty) => true,
+            (Infinity, Infinity) => true,
+            (Ival(a1, a2), Ival(b1, b2)) => a1 == b1 && a2 == b2,
+            _ => false,
+        }
     }
 }
 
@@ -90,55 +95,44 @@ impl Interval {
         };
 
         if b2 < b1 {
-            EMPTY
+            Empty
+        } else if (b1, b2) == (NegInfy, PosInfy) {
+            Infinity
         } else {
-            Self(b1, b2)
+            Ival(b1, b2)
         }
     }
 
     pub fn singleton(k: f64) -> Self {
-        Interval(Closed(k), Closed(k))
+        Ival(Closed(k), Closed(k))
     }
 
     pub fn is_singleton(&self) -> bool {
         match self {
-            Interval(Closed(k1), Closed(k2)) => k1 == k2,
+            Ival(Closed(k1), Closed(k2)) => k1 == k2,
             _ => false,
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Interval(LeftOpen(k1), RightOpen(k2)) => k1 == k2,
-            _ => false,
-        }
+    pub fn is_empty(self) -> bool {
+        self == Empty
     }
 
     pub fn union(self, other: Interval) -> Union {
         match (self, other) {
-            // Empty set ?
-            (a, Interval(LeftOpen(k1), RightOpen(k2))) if k1 == k2 => Union::Single(a),
-            (Interval(LeftOpen(k1), RightOpen(k2)), b) if k1 == k2 => Union::Single(b),
+            (a, Empty) | (Empty, a) => Union::Single(a),
+            (Infinity, _) | (_, Infinity) => Union::Single(Infinity),
 
-            // Infinity set ?
-            (Interval(NegInfy, PosInfy), _) | (_, Interval(NegInfy, PosInfy)) => {
-                Union::Single(Interval(NegInfy, PosInfy))
-            }
-
-            (a, b) => {
-                if a.overlap(b) || a.adhere_to(b) {
-                    Union::Single(Self::force_merge(a, b))
-                } else if b.0 > a.1 {
-                    Union::Couple(a, b)
+            (Ival(a1, a2), Ival(b1, b2)) => {
+                if self.overlap(other) || self.adhere_to(other) {
+                    Union::Single(Ival(a1.min(b1), a2.max(b2)))
+                } else if b1 > a2 {
+                    Union::Couple(self, other)
                 } else {
-                    Union::Couple(b, a)
+                    Union::Couple(other, self)
                 }
             }
         }
-    }
-
-    fn force_merge(a: Interval, b: Interval) -> Interval {
-        Interval(a.0.min(b.0), a.1.max(b.1))
     }
 
     /// Check if intervals overlap
@@ -147,28 +141,21 @@ impl Interval {
     ///
     fn overlap(self, other: Interval) -> bool {
         match (self, other) {
-            // empty set ?
-            (_, Interval(LeftOpen(k1), RightOpen(k2))) if k1 == k2 => false,
-            (Interval(LeftOpen(k1), RightOpen(k2)), _) if k1 == k2 => false,
-
-            // Infinity set ?
-            (Interval(NegInfy, PosInfy), _) => true,
-            (_, Interval(NegInfy, PosInfy)) => true,
-
-            (Interval(a1, a2), Interval(b1, b2)) => b2 >= a1 && b1 <= a2,
+            (_, Empty) | (Empty, _) => false,
+            (Infinity, _) | (_, Infinity) => true,
+            (Ival(a1, a2), Ival(b1, b2)) => b2 >= a1 && b1 <= a2,
         }
     }
 
     /// Check if interval endpoints could rejoin (ie ]2 and (2, (2 and 2] ...)
     ///
-    /// Note that `Empty` adhere to nothing.
-    /// FIXME: Empty set representation does not make it implicit...
-    ///
     fn adhere_to(self, other: Interval) -> bool {
-        if self.is_empty() || other.is_empty() {
-            false
-        } else {
-            self.1.closure() == other.0.closure() || other.1.closure() == self.0.closure()
+        match (self, other) {
+            (_, Empty) | (Empty, _) => false,
+            (Infinity, _) | (_, Infinity) => false,
+            (Ival(a1, a2), Ival(b1, b2)) => {
+                a1.closure() == b2.closure() || b1.closure() == a2.closure()
+            }
         }
     }
 }
@@ -365,15 +352,14 @@ mod test {
 
     #[test]
     fn test_union_1() {
-        assert!(matches!(EMPTY.union(EMPTY),
-            Union::Single(Interval(LeftOpen(k1), RightOpen(k2))) if k1 == k2));
+        assert!(matches!(EMPTY.union(EMPTY), Union::Single(Empty)));
     }
 
     #[test]
     fn test_union_2() {
         let i = Interval::new(Bound::Open(42.), Bound::Closed(43.));
         assert!(match i.union(EMPTY) {
-            Union::Single(Interval(LeftOpen(k1), Closed(k2))) => k1 == 42. && k2 == 43.,
+            Union::Single(Ival(LeftOpen(k1), Closed(k2))) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -382,23 +368,19 @@ mod test {
     fn test_union_3() {
         let i = Interval::new(Bound::Open(42.), Bound::Closed(43.));
         assert!(match EMPTY.union(i) {
-            Union::Single(Interval(LeftOpen(k1), Closed(k2))) => k1 == 42. && k2 == 43.,
+            Union::Single(Ival(LeftOpen(k1), Closed(k2))) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
 
     #[test]
     fn test_union_4() {
-        assert!(matches!(EMPTY.union(EMPTY),
-            Union::Single(Interval(LeftOpen(k1), RightOpen(k2))) if k1 == k2));
+        assert!(matches!(EMPTY.union(EMPTY), Union::Single(Empty)));
     }
 
     #[test]
     fn test_union_5() {
-        assert!(matches!(
-            INFINITY.union(INFINITY),
-            Union::Single(Interval(NegInfy, PosInfy))
-        ));
+        assert!(matches!(INFINITY.union(INFINITY), Union::Single(Infinity)));
     }
 
     #[test]
@@ -407,7 +389,7 @@ mod test {
         let b = Interval::new(Bound::Open(42.), Bound::Open(52.));
         assert!(matches!(
             a.union(b),
-            Union::Single(Interval(Closed(b1), Closed(b2))) if b1 == 42. && b2 == 52.
+            Union::Single(Ival(Closed(b1), Closed(b2))) if b1 == 42. && b2 == 52.
         ));
     }
 
@@ -417,7 +399,7 @@ mod test {
         let b = Interval::new(Bound::Open(42.), Bound::Open(52.));
         assert!(matches!(
             b.union(a),
-            Union::Single(Interval(Closed(b1), Closed(b2))) if b1 == 42. && b2 == 52.
+            Union::Single(Ival(Closed(b1), Closed(b2))) if b1 == 42. && b2 == 52.
         ));
     }
 
@@ -427,7 +409,7 @@ mod test {
         let b = Interval::new(Bound::Open(22.), Bound::Open(45.));
         assert!(matches!(
             b.union(a),
-            Union::Single(Interval(LeftOpen(b1), Closed(b2))) if b1 == 22. && b2 == 52.
+            Union::Single(Ival(LeftOpen(b1), Closed(b2))) if b1 == 22. && b2 == 52.
         ));
     }
 
@@ -435,14 +417,14 @@ mod test {
     fn test_build_1() {
         assert!(matches!(
             Interval::new(Bound::Unbound, Bound::Unbound),
-            Interval(NegInfy, PosInfy)
+            Infinity
         ));
     }
 
     #[test]
     fn test_build_2() {
         assert!(match Interval::new(Bound::Unbound, Bound::Closed(42.)) {
-            Interval(NegInfy, Closed(k)) => k == 42.,
+            Ival(NegInfy, Closed(k)) => k == 42.,
             _ => false,
         });
     }
@@ -450,7 +432,7 @@ mod test {
     #[test]
     fn test_build_3() {
         assert!(match Interval::new(Bound::Unbound, Bound::Open(42.)) {
-            Interval(NegInfy, RightOpen(k)) => k == 42.,
+            Ival(NegInfy, RightOpen(k)) => k == 42.,
             _ => false,
         });
     }
@@ -459,7 +441,7 @@ mod test {
     fn test_build_4() {
         assert!(
             match Interval::new(Bound::Closed(42.), Bound::Closed(43.)) {
-                Interval(Closed(k1), Closed(k2)) => k1 == 42. && k2 == 43.,
+                Ival(Closed(k1), Closed(k2)) => k1 == 42. && k2 == 43.,
                 _ => false,
             }
         );
@@ -478,7 +460,7 @@ mod test {
     #[test]
     fn test_build_7() {
         assert!(match Interval::new(Bound::Closed(42.), Bound::Open(43.)) {
-            Interval(Closed(k1), RightOpen(k2)) => k1 == 42. && k2 == 43.,
+            Ival(Closed(k1), RightOpen(k2)) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -491,7 +473,7 @@ mod test {
     #[test]
     fn test_build_9() {
         assert!(match Interval::new(Bound::Closed(42.), Bound::Unbound) {
-            Interval(Closed(k), PosInfy) => k == 42.,
+            Ival(Closed(k), PosInfy) => k == 42.,
             _ => false,
         });
     }
@@ -499,7 +481,7 @@ mod test {
     #[test]
     fn test_build_10() {
         assert!(match Interval::new(Bound::Open(42.), Bound::Closed(43.)) {
-            Interval(LeftOpen(k1), Closed(k2)) => k1 == 42. && k2 == 43.,
+            Ival(LeftOpen(k1), Closed(k2)) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -522,7 +504,7 @@ mod test {
     #[test]
     fn test_build_14() {
         assert!(match Interval::new(Bound::Open(42.), Bound::Unbound) {
-            Interval(LeftOpen(k), PosInfy) => k == 42.,
+            Ival(LeftOpen(k), PosInfy) => k == 42.,
             _ => false,
         });
     }
@@ -530,7 +512,7 @@ mod test {
     #[test]
     fn test_build_15() {
         assert!(match Interval::singleton(42.) {
-            Interval(Closed(k1), Closed(k2)) => k1 == k2,
+            Ival(Closed(k1), Closed(k2)) => k1 == k2,
             _ => false,
         });
     }
