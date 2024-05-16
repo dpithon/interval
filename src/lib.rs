@@ -1,7 +1,7 @@
 //! ## Introduction
 //!
 //! This crate implement interval definition and operations
-//! It manages Empty set, Infinity set, Singleton and Intervals in a unique structure `Interval`
+//! It manages Empty set, Infinity set, Intervals through `Interval` enum
 //!
 //! ## Interval creation
 //!
@@ -16,14 +16,14 @@
 //! ```
 //! ## Singleton, Empty or Infinity set
 //!
-//! Constants are provided for empty or infinity sets. An associated function is dedicated to
+//! Variants are provided for empty or infinity sets. An associated function is dedicated to
 //! create singleton.
 //!
 //! ```
-//! use interval::{Interval, EMPTY, INFINITY};
+//! use interval::Interval;
 //!
-//! let e = EMPTY;    // ∅, equivalent to Interval::new(Open(0.), Open(0.))
-//! let f = INFINITY; // (-∞,+∞), equivalent to Interval::new(Unbound, Unbound)
+//! let e = Interval::Empty;    // ∅
+//! let f = Interval::Infinity; // (-∞,+∞)
 //!
 //! let s = Interval::singleton(42.); // {42}, equivalent to Interval::new(Closed(42.), Closed(42.))
 //! ```
@@ -33,4 +33,3 @@
 mod interval;
 
 pub use interval::{Closed, Interval, Open, Unbound};
-pub use interval::{EMPTY, INFINITY};
