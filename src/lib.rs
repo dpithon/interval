@@ -32,5 +32,5 @@
 
 mod interval;
 
-pub use interval::Bound::{Closed, Open, Unbound};
-pub use interval::{Interval, EMPTY, INFINITY};
+pub use interval::{Closed, Interval, Open, Unbound};
+pub use interval::{EMPTY, INFINITY};
