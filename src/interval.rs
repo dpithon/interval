@@ -20,25 +20,11 @@ pub enum Interval {
 
 use Interval::*;
 
-pub enum Union {
-    Single(Interval),
-    Couple(Interval, Interval),
-}
-
-impl Display for Union {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Union::Single(i) => write!(f, "{i}"),
-            Union::Couple(a, b) => write!(f, "{a} U {b}"),
-        }
-    }
-}
-
 impl Display for Interval {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Empty => write!(f, "∅"),
-            Infinity => write!(f, "]-∞,+∞["),
+            Infinity => write!(f, "(-∞,+∞)"),
             Ival(Left(Closed(a)), Right(Closed(b))) if a == b => write!(f, "{{{a:5.2}}}"),
             Ival(a, b) => write!(f, "{a},{b}"),
         }
@@ -71,8 +57,8 @@ impl Interval {
     /// let b = Interval::new(Unbound, Unbound);
     /// let c = Interval::singleton(42.);
     ///
-    /// assert_eq!(format!("{a}"), "]42.00,43.00]");
-    /// assert_eq!(format!("{b}"), "]-∞,+∞[");
+    /// assert_eq!(format!("{a}"), "(42.00,43.00]");
+    /// assert_eq!(format!("{b}"), "(-∞,+∞)");
     /// assert_eq!(format!("{c}"), "{42.00}");
     /// ```
     ///
@@ -104,18 +90,18 @@ impl Interval {
         self == Empty
     }
 
-    pub fn union(self, other: Interval) -> Union {
+    pub fn union(self, other: Interval) -> (Interval, Option<Interval>) {
         match (self, other) {
-            (a, Empty) | (Empty, a) => Union::Single(a),
-            (Infinity, _) | (_, Infinity) => Union::Single(Infinity),
+            (a, Empty) | (Empty, a) => (a, None),
+            (Infinity, _) | (_, Infinity) => (Infinity, None),
 
             (Ival(a1, a2), Ival(b1, b2)) => {
                 if self.overlap(other) || self.adhere_to(other) {
-                    Union::Single(Ival(a1.min(b1), a2.max(b2)))
+                    (Ival(a1.min(b1), a2.max(b2)), None)
                 } else if b1 > a2 {
-                    Union::Couple(self, other)
+                    (self, Some(other))
                 } else {
-                    Union::Couple(other, self)
+                    (other, Some(self))
                 }
             }
         }
@@ -154,9 +140,7 @@ impl Interval {
         match (self, other) {
             (_, Empty) | (Empty, _) => false,
             (Infinity, _) | (_, Infinity) => false,
-            (Ival(a1, a2), Ival(b1, b2)) => {
-                a1.closure() == b2.closure() || b1.closure() == a2.closure()
-            }
+            (Ival(a1, a2), Ival(b1, b2)) => a1.closure(b2) || a2.closure(b1),
         }
     }
 }
@@ -164,6 +148,47 @@ impl Interval {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_eq() {
+        let a = [
+            Interval::new(Closed(42.), Closed(43.)),
+            Interval::new(Closed(42.), Open(43.)),
+            Interval::new(Open(42.), Open(43.)),
+            Interval::new(Open(42.), Closed(43.)),
+            Interval::new(Unbound, Closed(43.)),
+            Interval::new(Closed(43.), Unbound),
+            Interval::new(Unbound, Unbound),
+        ];
+
+        for (m, i) in a.iter().enumerate() {
+            for (n, j) in a.iter().enumerate() {
+                if m == n {
+                    assert_eq!(i, j);
+                } else {
+                    assert_ne!(i, j);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_singleton_1() {
+        let a = Interval::new(Closed(42.), Open(43.));
+        assert!(!a.is_singleton());
+    }
+
+    #[test]
+    fn test_singleton_2() {
+        let a = Interval::new(Closed(42.), Closed(42.));
+        assert!(a.is_singleton());
+    }
+
+    #[test]
+    fn test_singleton_3() {
+        let a = Interval::singleton(42.);
+        assert!(a.is_singleton());
+    }
 
     #[test]
     fn test_overlap_1() {
@@ -352,10 +377,58 @@ mod test {
     }
 
     #[test]
+    fn test_adhere_1() {
+        let a = Interval::new(Open(42.), Unbound);
+        let b = Interval::new(Unbound, Closed(42.));
+
+        assert!(a.adhere_to(b));
+    }
+
+    #[test]
+    fn test_adhere_2() {
+        let a = Interval::new(Open(42.), Unbound);
+        let b = Interval::new(Unbound, Open(42.));
+
+        assert!(!a.adhere_to(b));
+    }
+
+    #[test]
+    fn test_adhere_3() {
+        let a = Interval::new(Unbound, Open(42.));
+        let b = Interval::new(Closed(42.), Unbound);
+
+        assert!(a.adhere_to(b));
+    }
+
+    #[test]
+    fn test_adhere_4() {
+        let a = Interval::new(Unbound, Open(42.));
+        let b = Interval::new(Open(42.), Unbound);
+
+        assert!(!a.adhere_to(b));
+    }
+
+    #[test]
+    fn test_adhere_5() {
+        let a = Interval::Infinity;
+        let b = Interval::new(Open(42.), Unbound);
+
+        assert!(!a.adhere_to(b));
+    }
+
+    #[test]
+    fn test_adhere_6() {
+        let a = Interval::Empty;
+        let b = Interval::new(Open(42.), Unbound);
+
+        assert!(!a.adhere_to(b));
+    }
+
+    #[test]
     fn test_union_1() {
         assert!(matches!(
             Interval::Empty.union(Interval::Empty),
-            Union::Single(Interval::Empty)
+            (Interval::Empty, None)
         ));
     }
 
@@ -363,7 +436,7 @@ mod test {
     fn test_union_2() {
         let i = Interval::new(Open(42.), Closed(43.));
         assert!(match i.union(Interval::Empty) {
-            Union::Single(Ival(Left(Open(k1)), Right(Closed(k2)))) => k1 == 42. && k2 == 43.,
+            (Ival(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -372,7 +445,7 @@ mod test {
     fn test_union_3() {
         let i = Interval::new(Open(42.), Closed(43.));
         assert!(match Interval::Empty.union(i) {
-            Union::Single(Ival(Left(Open(k1)), Right(Closed(k2)))) => k1 == 42. && k2 == 43.,
+            (Ival(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -381,7 +454,7 @@ mod test {
     fn test_union_4() {
         assert!(matches!(
             Interval::Empty.union(Interval::Empty),
-            Union::Single(Interval::Empty)
+            (Interval::Empty, None)
         ));
     }
 
@@ -389,7 +462,7 @@ mod test {
     fn test_union_5() {
         assert!(matches!(
             Interval::Infinity.union(Interval::Infinity),
-            Union::Single(Interval::Infinity)
+            (Interval::Infinity, None)
         ));
     }
 
@@ -399,7 +472,7 @@ mod test {
         let b = Interval::new(Open(42.), Open(52.));
         assert!(matches!(
             a.union(b),
-            Union::Single(Ival(Left(Closed(b1)), Right(Closed(b2)))) if b1 == 42. && b2 == 52.
+            (Ival(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
         ));
     }
 
@@ -409,7 +482,7 @@ mod test {
         let b = Interval::new(Open(42.), Open(52.));
         assert!(matches!(
             b.union(a),
-            Union::Single(Ival(Left(Closed(b1)), Right(Closed(b2)))) if b1 == 42. && b2 == 52.
+            (Ival(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
         ));
     }
 
@@ -419,8 +492,22 @@ mod test {
         let b = Interval::new(Open(22.), Open(45.));
         assert!(matches!(
             b.union(a),
-            Union::Single(Ival(Left(Open(b1)), Right(Closed(b2)))) if b1 == 22. && b2 == 52.
+            (Ival(Left(Open(b1)), Right(Closed(b2))),None) if b1 == 22. && b2 == 52.
         ));
+    }
+
+    #[test]
+    fn test_union_9() {
+        let a = Interval::new(Closed(42.), Closed(52.));
+        let b = Interval::new(Open(53.), Open(55.));
+        assert_eq!(b.union(a), (a, Some(b)));
+    }
+
+    #[test]
+    fn test_union_10() {
+        let a = Interval::new(Closed(42.), Closed(52.));
+        let b = Interval::new(Open(13.), Open(15.));
+        assert_eq!(b.union(a), (b, Some(a)));
     }
 
     #[test]
@@ -545,7 +632,7 @@ mod test {
     #[test]
     fn test_display_2() {
         let inf = Interval::new(Unbound, Unbound);
-        assert_eq!(format!("{inf}"), "]-∞,+∞[");
+        assert_eq!(format!("{inf}"), "(-∞,+∞)");
     }
 
     #[test]
@@ -563,42 +650,42 @@ mod test {
     #[test]
     fn test_display_5() {
         let i = Interval::new(Closed(42.), Open(43.));
-        assert_eq!(format!("{i}"), "[42.00,43.00[");
+        assert_eq!(format!("{i}"), "[42.00,43.00)");
     }
 
     #[test]
     fn test_display_6() {
         let i = Interval::new(Closed(42.), Unbound);
-        assert_eq!(format!("{i}"), "[42.00,+∞[");
+        assert_eq!(format!("{i}"), "[42.00,+∞)");
     }
 
     #[test]
     fn test_display_7() {
         let i = Interval::new(Open(42.), Closed(43.00));
-        assert_eq!(format!("{i}"), "]42.00,43.00]");
+        assert_eq!(format!("{i}"), "(42.00,43.00]");
     }
 
     #[test]
     fn test_display_8() {
         let i = Interval::new(Open(42.), Open(43.00));
-        assert_eq!(format!("{i}"), "]42.00,43.00[");
+        assert_eq!(format!("{i}"), "(42.00,43.00)");
     }
 
     #[test]
     fn test_display_9() {
         let i = Interval::new(Open(42.), Unbound);
-        assert_eq!(format!("{i}"), "]42.00,+∞[");
+        assert_eq!(format!("{i}"), "(42.00,+∞)");
     }
 
     #[test]
     fn test_display_10() {
         let i = Interval::new(Unbound, Closed(42.));
-        assert_eq!(format!("{i}"), "]-∞,42.00]");
+        assert_eq!(format!("{i}"), "(-∞,42.00]");
     }
 
     #[test]
     fn test_display_11() {
         let i = Interval::new(Unbound, Open(42.));
-        assert_eq!(format!("{i}"), "]-∞,42.00[");
+        assert_eq!(format!("{i}"), "(-∞,42.00)");
     }
 }
