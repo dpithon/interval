@@ -15,7 +15,7 @@ use std::fmt::Display;
 pub enum Interval {
     Empty,
     Infinity,
-    Ival(Left, Right),
+    LR(Left, Right),
 }
 
 use Interval::*;
@@ -25,8 +25,8 @@ impl Display for Interval {
         match self {
             Empty => write!(f, "∅"),
             Infinity => write!(f, "(-∞,+∞)"),
-            Ival(Left(Closed(a)), Right(Closed(b))) if a == b => write!(f, "{{{a:5.2}}}"),
-            Ival(a, b) => write!(f, "{a},{b}"),
+            LR(Left(Closed(a)), Right(Closed(b))) if a == b => write!(f, "{{{a:5.2}}}"),
+            LR(a, b) => write!(f, "{a},{b}"),
         }
     }
 }
@@ -36,7 +36,7 @@ impl PartialEq for Interval {
         match (self, other) {
             (Empty, Empty) => true,
             (Infinity, Infinity) => true,
-            (Ival(a1, a2), Ival(b1, b2)) => a1 == b1 && a2 == b2,
+            (LR(a1, a2), LR(b1, b2)) => a1 == b1 && a2 == b2,
             _ => false,
         }
     }
@@ -71,17 +71,17 @@ impl Interval {
         } else if (b1, b2) == (Left(Unbound), Right(Unbound)) {
             Infinity
         } else {
-            Ival(b1, b2)
+            LR(b1, b2)
         }
     }
 
     pub fn singleton(k: f64) -> Self {
-        Ival(Left(Closed(k)), Right(Closed(k)))
+        LR(Left(Closed(k)), Right(Closed(k)))
     }
 
     pub fn is_singleton(&self) -> bool {
         match self {
-            Ival(Left(Closed(k1)), Right(Closed(k2))) => k1 == k2,
+            LR(Left(Closed(k1)), Right(Closed(k2))) => k1 == k2,
             _ => false,
         }
     }
@@ -95,9 +95,9 @@ impl Interval {
             (a, Empty) | (Empty, a) => (a, None),
             (Infinity, _) | (_, Infinity) => (Infinity, None),
 
-            (Ival(a1, a2), Ival(b1, b2)) => {
+            (LR(a1, a2), LR(b1, b2)) => {
                 if self.overlap(other) || self.adhere_to(other) {
-                    (Ival(a1.min(b1), a2.max(b2)), None)
+                    (LR(a1.min(b1), a2.max(b2)), None)
                 } else if b1 > a2 {
                     (self, Some(other))
                 } else {
@@ -112,9 +112,9 @@ impl Interval {
             (_, Empty) | (Empty, _) => Interval::Empty,
             (Infinity, a) | (a, Infinity) => a,
 
-            (Ival(a1, a2), Ival(b1, b2)) => {
+            (LR(a1, a2), LR(b1, b2)) => {
                 if self.overlap(other) {
-                    Ival(a1.max(b1), a2.min(b2))
+                    LR(a1.max(b1), a2.min(b2))
                 } else {
                     Interval::Empty
                 }
@@ -130,7 +130,7 @@ impl Interval {
         match (self, other) {
             (_, Empty) | (Empty, _) => false,
             (Infinity, _) | (_, Infinity) => true,
-            (Ival(a1, a2), Ival(b1, b2)) => b2 >= a1 && b1 <= a2,
+            (LR(a1, a2), LR(b1, b2)) => b2 >= a1 && b1 <= a2,
         }
     }
 
@@ -140,7 +140,7 @@ impl Interval {
         match (self, other) {
             (_, Empty) | (Empty, _) => false,
             (Infinity, _) | (_, Infinity) => false,
-            (Ival(a1, a2), Ival(b1, b2)) => a1.closure(b2) || a2.closure(b1),
+            (LR(a1, a2), LR(b1, b2)) => a1.closure(b2) || a2.closure(b1),
         }
     }
 }
@@ -436,7 +436,7 @@ mod test {
     fn test_union_2() {
         let i = Interval::new(Open(42.), Closed(43.));
         assert!(match i.union(Interval::Empty) {
-            (Ival(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
+            (LR(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -445,7 +445,7 @@ mod test {
     fn test_union_3() {
         let i = Interval::new(Open(42.), Closed(43.));
         assert!(match Interval::Empty.union(i) {
-            (Ival(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
+            (LR(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -472,7 +472,7 @@ mod test {
         let b = Interval::new(Open(42.), Open(52.));
         assert!(matches!(
             a.union(b),
-            (Ival(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
+            (LR(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
         ));
     }
 
@@ -482,7 +482,7 @@ mod test {
         let b = Interval::new(Open(42.), Open(52.));
         assert!(matches!(
             b.union(a),
-            (Ival(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
+            (LR(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
         ));
     }
 
@@ -492,7 +492,7 @@ mod test {
         let b = Interval::new(Open(22.), Open(45.));
         assert!(matches!(
             b.union(a),
-            (Ival(Left(Open(b1)), Right(Closed(b2))),None) if b1 == 22. && b2 == 52.
+            (LR(Left(Open(b1)), Right(Closed(b2))),None) if b1 == 22. && b2 == 52.
         ));
     }
 
@@ -518,7 +518,7 @@ mod test {
     #[test]
     fn test_build_2() {
         assert!(match Interval::new(Unbound, Closed(42.)) {
-            Ival(Left(Bound::Unbound), Right(Closed(k))) => k == 42.,
+            LR(Left(Bound::Unbound), Right(Closed(k))) => k == 42.,
             _ => false,
         });
     }
@@ -526,7 +526,7 @@ mod test {
     #[test]
     fn test_build_3() {
         assert!(match Interval::new(Unbound, Open(42.)) {
-            Ival(Left(Bound::Unbound), Right(Open(k))) => k == 42.,
+            LR(Left(Bound::Unbound), Right(Open(k))) => k == 42.,
             _ => false,
         });
     }
@@ -534,7 +534,7 @@ mod test {
     #[test]
     fn test_build_4() {
         assert!(match Interval::new(Closed(42.), Closed(43.)) {
-            Ival(Left(Closed(k1)), Right(Closed(k2))) => k1 == 42. && k2 == 43.,
+            LR(Left(Closed(k1)), Right(Closed(k2))) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -552,7 +552,7 @@ mod test {
     #[test]
     fn test_build_7() {
         assert!(match Interval::new(Closed(42.), Open(43.)) {
-            Ival(Left(Closed(k1)), Right(Open(k2))) => k1 == 42. && k2 == 43.,
+            LR(Left(Closed(k1)), Right(Open(k2))) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -565,7 +565,7 @@ mod test {
     #[test]
     fn test_build_9() {
         assert!(match Interval::new(Closed(42.), Unbound) {
-            Ival(Left(Closed(k)), Right(Bound::Unbound)) => k == 42.,
+            LR(Left(Closed(k)), Right(Bound::Unbound)) => k == 42.,
             _ => false,
         });
     }
@@ -573,7 +573,7 @@ mod test {
     #[test]
     fn test_build_10() {
         assert!(match Interval::new(Open(42.), Closed(43.)) {
-            Ival(Left(Open(k1)), Right(Closed(k2))) => k1 == 42. && k2 == 43.,
+            LR(Left(Open(k1)), Right(Closed(k2))) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -596,7 +596,7 @@ mod test {
     #[test]
     fn test_build_14() {
         assert!(match Interval::new(Open(42.), Unbound) {
-            Ival(Left(Open(k)), Right(Bound::Unbound)) => k == 42.,
+            LR(Left(Open(k)), Right(Bound::Unbound)) => k == 42.,
             _ => false,
         });
     }
@@ -604,7 +604,7 @@ mod test {
     #[test]
     fn test_build_15() {
         assert!(match Interval::singleton(42.) {
-            Ival(Left(Closed(k1)), Right(Closed(k2))) => k1 == k2,
+            LR(Left(Closed(k1)), Right(Closed(k2))) => k1 == k2,
             _ => false,
         });
     }
