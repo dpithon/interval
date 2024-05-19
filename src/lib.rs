@@ -20,10 +20,10 @@
 //! create singleton.
 //!
 //! ```
-//! use interval::Interval;
+//! use interval::{Interval, EMPTY, INFINITY};
 //!
-//! let e = Interval::Empty;    // ∅
-//! let f = Interval::Infinity; // (-∞,+∞)
+//! let e = EMPTY;    // ∅
+//! let f = INFINITY; // (-∞,+∞)
 //!
 //! let s = Interval::singleton(42.); // {42}, equivalent to Interval::new(Closed(42.), Closed(42.))
 //! ```
@@ -32,4 +32,4 @@
 
 mod interval;
 
-pub use interval::{Closed, Interval, Open, Unbound};
+pub use interval::{Closed, Interval, Open, Unbound, EMPTY, INFINITY};

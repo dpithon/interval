@@ -12,33 +12,26 @@ use std::cmp::PartialEq;
 use std::fmt::Display;
 
 #[derive(Debug, Clone, Copy)]
-pub enum Interval {
-    Empty,
-    Infinity,
-    LR(Left, Right),
-}
+pub struct Interval(Left, Right);
 
-use Interval::*;
+pub const EMPTY: Interval = Interval(Left(Open(0.)), Right(Open(0.)));
+pub const INFINITY: Interval = Interval(Left(Unbound), Right(Unbound));
 
 impl Display for Interval {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Empty => write!(f, "∅"),
-            Infinity => write!(f, "(-∞,+∞)"),
-            LR(Left(Closed(a)), Right(Closed(b))) if a == b => write!(f, "{{{a:5.2}}}"),
-            LR(a, b) => write!(f, "{a},{b}"),
+            Interval(Left(Open(k1)), Right(Open(k2))) if k1 == k2 => write!(f, "∅"),
+            Interval(Left(Unbound), Right(Unbound)) => write!(f, "(-∞,+∞)"),
+            Interval(Left(Closed(a)), Right(Closed(b))) if a == b => write!(f, "{{{a:5.2}}}"),
+            Interval(a, b) => write!(f, "{a},{b}"),
         }
     }
 }
 
 impl PartialEq for Interval {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Empty, Empty) => true,
-            (Infinity, Infinity) => true,
-            (LR(a1, a2), LR(b1, b2)) => a1 == b1 && a2 == b2,
-            _ => false,
-        }
+        let (Interval(a1, a2), Interval(b1, b2)) = (self, other);
+        a1 == b1 && a2 == b2
     }
 }
 
@@ -67,37 +60,45 @@ impl Interval {
         let b2 = Right(b2);
 
         if b2 < b1 {
-            Empty
+            EMPTY
         } else if (b1, b2) == (Left(Unbound), Right(Unbound)) {
-            Infinity
+            INFINITY
         } else {
-            LR(b1, b2)
+            Interval(b1, b2)
         }
     }
 
     pub fn singleton(k: f64) -> Self {
-        LR(Left(Closed(k)), Right(Closed(k)))
+        Interval(Left(Closed(k)), Right(Closed(k)))
     }
 
     pub fn is_singleton(&self) -> bool {
         match self {
-            LR(Left(Closed(k1)), Right(Closed(k2))) => k1 == k2,
+            Interval(Left(Closed(k1)), Right(Closed(k2))) => k1 == k2,
             _ => false,
         }
     }
 
     pub fn is_empty(self) -> bool {
-        self == Empty
+        self == EMPTY
     }
 
     pub fn union(self, other: Interval) -> (Interval, Option<Interval>) {
         match (self, other) {
-            (a, Empty) | (Empty, a) => (a, None),
-            (Infinity, _) | (_, Infinity) => (Infinity, None),
+            (a, Interval(Left(Open(k1)), Right(Open(k2))))
+            | (Interval(Left(Open(k1)), Right(Open(k2))), a)
+                if k1 == k2 =>
+            {
+                (a, None)
+            }
+            (Interval(Left(Unbound), Right(Unbound)), _)
+            | (_, Interval(Left(Unbound), Right(Unbound))) => {
+                (Interval(Left(Unbound), Right(Unbound)), None)
+            }
 
-            (LR(a1, a2), LR(b1, b2)) => {
+            (Interval(a1, a2), Interval(b1, b2)) => {
                 if self.overlap(other) || self.adhere_to(other) {
-                    (LR(a1.min(b1), a2.max(b2)), None)
+                    (Interval(a1.min(b1), a2.max(b2)), None)
                 } else if b1 > a2 {
                     (self, Some(other))
                 } else {
@@ -107,40 +108,34 @@ impl Interval {
         }
     }
 
-    pub fn intersect(self, other: Interval) -> Interval {
-        match (self, other) {
-            (_, Empty) | (Empty, _) => Interval::Empty,
-            (Infinity, a) | (a, Infinity) => a,
-
-            (LR(a1, a2), LR(b1, b2)) => {
-                if self.overlap(other) {
-                    LR(a1.max(b1), a2.min(b2))
-                } else {
-                    Interval::Empty
-                }
-            }
-        }
-    }
-
     /// Check if intervals overlap
     ///
-    /// Note that `Empty` overlap nothing.
+    /// Note that `Interval(Left(Open(0.)),Right(Open(0.)))` overlap nothing.
     ///
     fn overlap(self, other: Interval) -> bool {
         match (self, other) {
-            (_, Empty) | (Empty, _) => false,
-            (Infinity, _) | (_, Infinity) => true,
-            (LR(a1, a2), LR(b1, b2)) => b2 >= a1 && b1 <= a2,
+            (_, Interval(Left(Open(k1)), Right(Open(k2))))
+            | (Interval(Left(Open(k1)), Right(Open(k2))), _)
+                if k1 == k2 =>
+            {
+                false
+            }
+            (Interval(Left(Unbound), Right(Unbound)), _)
+            | (_, Interval(Left(Unbound), Right(Unbound))) => true,
+            (Interval(a1, a2), Interval(b1, b2)) => b2 >= a1 && b1 <= a2,
         }
     }
 
     /// Check if interval endpoints could rejoin (ie ]2 and (2, (2 and 2] ...)
     ///
     fn adhere_to(self, other: Interval) -> bool {
+        if self.is_empty() || other.is_empty() {
+            return false;
+        }
         match (self, other) {
-            (_, Empty) | (Empty, _) => false,
-            (Infinity, _) | (_, Infinity) => false,
-            (LR(a1, a2), LR(b1, b2)) => a1.closure(b2) || a2.closure(b1),
+            (Interval(Left(Unbound), Right(Unbound)), _)
+            | (_, Interval(Left(Unbound), Right(Unbound))) => false,
+            (Interval(a1, a2), Interval(b1, b2)) => a1.closure(b2) || a2.closure(b1),
         }
     }
 }
@@ -201,14 +196,14 @@ mod test {
     #[test]
     fn test_overlap_2() {
         let a = Interval::new(Unbound, Unbound);
-        let b = Interval::Empty;
+        let b = Interval(Left(Open(0.)), Right(Open(0.)));
 
         assert!(!a.overlap(b));
     }
 
     #[test]
     fn test_overlap_3() {
-        let a = Interval::Empty;
+        let a = Interval(Left(Open(0.)), Right(Open(0.)));
         let b = Interval::new(Unbound, Unbound);
 
         assert!(!a.overlap(b));
@@ -272,7 +267,7 @@ mod test {
 
     #[test]
     fn test_overlap_12() {
-        let a = Interval::Empty;
+        let a = Interval(Left(Open(0.)), Right(Open(0.)));
         let b = Interval::new(Unbound, Unbound);
 
         assert!(!a.overlap(b));
@@ -280,8 +275,8 @@ mod test {
 
     #[test]
     fn test_overlap_13() {
-        let a = Interval::Empty;
-        let b = Interval::Empty;
+        let a = Interval(Left(Open(0.)), Right(Open(0.)));
+        let b = Interval(Left(Open(0.)), Right(Open(0.)));
 
         assert!(!a.overlap(b));
     }
@@ -410,7 +405,7 @@ mod test {
 
     #[test]
     fn test_adhere_5() {
-        let a = Interval::Infinity;
+        let a = Interval(Left(Unbound), Right(Unbound));
         let b = Interval::new(Open(42.), Unbound);
 
         assert!(!a.adhere_to(b));
@@ -418,7 +413,7 @@ mod test {
 
     #[test]
     fn test_adhere_6() {
-        let a = Interval::Empty;
+        let a = Interval(Left(Open(0.)), Right(Open(0.)));
         let b = Interval::new(Open(42.), Unbound);
 
         assert!(!a.adhere_to(b));
@@ -426,17 +421,18 @@ mod test {
 
     #[test]
     fn test_union_1() {
-        assert!(matches!(
-            Interval::Empty.union(Interval::Empty),
-            (Interval::Empty, None)
-        ));
+        assert_eq!(
+            Interval(Left(Open(0.)), Right(Open(0.)))
+                .union(Interval(Left(Open(0.)), Right(Open(0.)))),
+            (Interval(Left(Open(0.)), Right(Open(0.))), None)
+        );
     }
 
     #[test]
     fn test_union_2() {
         let i = Interval::new(Open(42.), Closed(43.));
-        assert!(match i.union(Interval::Empty) {
-            (LR(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
+        assert!(match i.union(Interval(Left(Open(0.)), Right(Open(0.)))) {
+            (Interval(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
@@ -444,25 +440,26 @@ mod test {
     #[test]
     fn test_union_3() {
         let i = Interval::new(Open(42.), Closed(43.));
-        assert!(match Interval::Empty.union(i) {
-            (LR(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
+        assert!(match Interval(Left(Open(0.)), Right(Open(0.))).union(i) {
+            (Interval(Left(Open(k1)), Right(Closed(k2))), None) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
 
     #[test]
     fn test_union_4() {
-        assert!(matches!(
-            Interval::Empty.union(Interval::Empty),
-            (Interval::Empty, None)
-        ));
+        assert_eq!(
+            Interval(Left(Open(0.)), Right(Open(0.)))
+                .union(Interval(Left(Open(0.)), Right(Open(0.)))),
+            (Interval(Left(Open(0.)), Right(Open(0.))), None)
+        );
     }
 
     #[test]
     fn test_union_5() {
         assert!(matches!(
-            Interval::Infinity.union(Interval::Infinity),
-            (Interval::Infinity, None)
+            Interval(Left(Unbound), Right(Unbound)).union(Interval(Left(Unbound), Right(Unbound))),
+            (Interval(Left(Unbound), Right(Unbound)), None)
         ));
     }
 
@@ -472,7 +469,7 @@ mod test {
         let b = Interval::new(Open(42.), Open(52.));
         assert!(matches!(
             a.union(b),
-            (LR(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
+            (Interval(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
         ));
     }
 
@@ -482,7 +479,7 @@ mod test {
         let b = Interval::new(Open(42.), Open(52.));
         assert!(matches!(
             b.union(a),
-            (LR(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
+            (Interval(Left(Closed(b1)), Right(Closed(b2))),None) if b1 == 42. && b2 == 52.
         ));
     }
 
@@ -492,7 +489,7 @@ mod test {
         let b = Interval::new(Open(22.), Open(45.));
         assert!(matches!(
             b.union(a),
-            (LR(Left(Open(b1)), Right(Closed(b2))),None) if b1 == 22. && b2 == 52.
+            (Interval(Left(Open(b1)), Right(Closed(b2))),None) if b1 == 22. && b2 == 52.
         ));
     }
 
@@ -512,13 +509,16 @@ mod test {
 
     #[test]
     fn test_build_1() {
-        assert!(matches!(Interval::new(Unbound, Unbound), Infinity));
+        assert!(matches!(
+            Interval::new(Unbound, Unbound),
+            Interval(Left(Unbound), Right(Unbound))
+        ));
     }
 
     #[test]
     fn test_build_2() {
         assert!(match Interval::new(Unbound, Closed(42.)) {
-            LR(Left(Bound::Unbound), Right(Closed(k))) => k == 42.,
+            Interval(Left(Bound::Unbound), Right(Closed(k))) => k == 42.,
             _ => false,
         });
     }
@@ -526,7 +526,7 @@ mod test {
     #[test]
     fn test_build_3() {
         assert!(match Interval::new(Unbound, Open(42.)) {
-            LR(Left(Bound::Unbound), Right(Open(k))) => k == 42.,
+            Interval(Left(Bound::Unbound), Right(Open(k))) => k == 42.,
             _ => false,
         });
     }
@@ -534,38 +534,47 @@ mod test {
     #[test]
     fn test_build_4() {
         assert!(match Interval::new(Closed(42.), Closed(43.)) {
-            LR(Left(Closed(k1)), Right(Closed(k2))) => k1 == 42. && k2 == 43.,
+            Interval(Left(Closed(k1)), Right(Closed(k2))) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
 
     #[test]
     fn test_build_5() {
-        assert_eq!(Interval::new(Closed(43.), Closed(42.)), Interval::Empty);
+        assert_eq!(
+            Interval::new(Closed(43.), Closed(42.)),
+            Interval(Left(Open(0.)), Right(Open(0.)))
+        );
     }
 
     #[test]
     fn test_build_6() {
-        assert_eq!(Interval::new(Closed(42.), Open(42.)), Interval::Empty);
+        assert_eq!(
+            Interval::new(Closed(42.), Open(42.)),
+            Interval(Left(Open(0.)), Right(Open(0.)))
+        );
     }
 
     #[test]
     fn test_build_7() {
         assert!(match Interval::new(Closed(42.), Open(43.)) {
-            LR(Left(Closed(k1)), Right(Open(k2))) => k1 == 42. && k2 == 43.,
+            Interval(Left(Closed(k1)), Right(Open(k2))) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
 
     #[test]
     fn test_build_8() {
-        assert_eq!(Interval::new(Closed(43.), Open(42.)), Interval::Empty);
+        assert_eq!(
+            Interval::new(Closed(43.), Open(42.)),
+            Interval(Left(Open(0.)), Right(Open(0.)))
+        );
     }
 
     #[test]
     fn test_build_9() {
         assert!(match Interval::new(Closed(42.), Unbound) {
-            LR(Left(Closed(k)), Right(Bound::Unbound)) => k == 42.,
+            Interval(Left(Closed(k)), Right(Bound::Unbound)) => k == 42.,
             _ => false,
         });
     }
@@ -573,30 +582,39 @@ mod test {
     #[test]
     fn test_build_10() {
         assert!(match Interval::new(Open(42.), Closed(43.)) {
-            LR(Left(Open(k1)), Right(Closed(k2))) => k1 == 42. && k2 == 43.,
+            Interval(Left(Open(k1)), Right(Closed(k2))) => k1 == 42. && k2 == 43.,
             _ => false,
         });
     }
 
     #[test]
     fn test_build_11() {
-        assert_eq!(Interval::new(Open(43.), Closed(42.)), Interval::Empty);
+        assert_eq!(
+            Interval::new(Open(43.), Closed(42.)),
+            Interval(Left(Open(0.)), Right(Open(0.)))
+        );
     }
 
     #[test]
     fn test_build_12() {
-        assert_eq!(Interval::new(Open(42.), Closed(42.)), Interval::Empty);
+        assert_eq!(
+            Interval::new(Open(42.), Closed(42.)),
+            Interval(Left(Open(0.)), Right(Open(0.)))
+        );
     }
 
     #[test]
     fn test_build_13() {
-        assert_eq!(Interval::new(Open(42.), Open(42.)), Interval::Empty);
+        assert_eq!(
+            Interval::new(Open(42.), Open(42.)),
+            Interval(Left(Open(0.)), Right(Open(0.)))
+        );
     }
 
     #[test]
     fn test_build_14() {
         assert!(match Interval::new(Open(42.), Unbound) {
-            LR(Left(Open(k)), Right(Bound::Unbound)) => k == 42.,
+            Interval(Left(Open(k)), Right(Bound::Unbound)) => k == 42.,
             _ => false,
         });
     }
@@ -604,7 +622,7 @@ mod test {
     #[test]
     fn test_build_15() {
         assert!(match Interval::singleton(42.) {
-            LR(Left(Closed(k1)), Right(Closed(k2))) => k1 == k2,
+            Interval(Left(Closed(k1)), Right(Closed(k2))) => k1 == k2,
             _ => false,
         });
     }
@@ -621,12 +639,15 @@ mod test {
 
     #[test]
     fn test_empty_2() {
-        assert!(Interval::Empty.is_empty());
+        assert!(Interval(Left(Open(0.)), Right(Open(0.))).is_empty());
     }
 
     #[test]
     fn test_display_1() {
-        assert_eq!(format!("{}", Interval::Empty), "∅");
+        assert_eq!(
+            format!("{}", Interval(Left(Open(0.)), Right(Open(0.)))),
+            "∅"
+        );
     }
 
     #[test]
