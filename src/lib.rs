@@ -31,5 +31,7 @@
 //!
 
 mod interval;
+mod interval_set;
 
 pub use interval::{Closed, Interval, Open, Unbound, EMPTY, INFINITY};
+pub use interval_set::IntervalSet;
